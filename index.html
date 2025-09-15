@@ -93,24 +93,24 @@
         const photo = new Image();
         photo.src = photoSrc;
         photo.onload = function() {
-          // Position values match the frame area on template
-          const frameX = 1000;  // adjust if needed
-          const frameY = 220;
-          const frameW = 400;
-          const frameH = 500;
+          // Corrected frame position for 3520x1980 template
+          const frameX = 2360;  
+          const frameY = 420;
+          const frameW = 950;
+          const frameH = 1200;
 
           // Clip into rounded rectangle
           ctx.save();
-          roundRect(ctx, frameX, frameY, frameW, frameH, 40);
+          roundRect(ctx, frameX, frameY, frameW, frameH, 50);
           ctx.clip();
           ctx.drawImage(photo, frameX, frameY, frameW, frameH);
           ctx.restore();
 
           // Write name in blue brush area
-          ctx.font = "60px 'Great Vibes', cursive";
+          ctx.font = "120px 'Great Vibes', cursive"; // stylish font
           ctx.fillStyle = "white";
           ctx.textAlign = "center";
-          ctx.fillText(name, frameX + frameW/2, frameY + frameH + 100);
+          ctx.fillText(name, 2835, 1750);
 
           // Show preview + download
           showResult(canvas, name);

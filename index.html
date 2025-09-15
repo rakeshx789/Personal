@@ -26,6 +26,17 @@
       background: #4CAF50; color: white; font-size: 15px; cursor: pointer;
     }
     .hint { color: #fff; margin-top:6px; opacity:0.95; }
+    .controls {
+      margin-top: 10px;
+      color: #fff;
+    }
+    .controls label {
+      margin: 0 10px;
+      display: inline-block;
+    }
+    .controls input {
+      vertical-align: middle;
+    }
   </style>
 
   <!-- stylish script font -->
@@ -33,7 +44,7 @@
 </head>
 <body>
   <h1>🌸 Navaratri 2025 Invitation Generator 🌸</h1>
-  <p class="hint">Upload a single photo — it will be placed into the right frame and name will appear on blue brush.</p>
+  <p class="hint">Upload a single photo — adjust zoom/move if needed. Wide photos will get blurred background fill.</p>
 
   <input id="fileInput" type="file" accept="image/*" style="display:none">
   <button class="upload-btn" onclick="document.getElementById('fileInput').click()">📤 Upload Photo</button>
@@ -41,18 +52,14 @@
   <div id="preview"></div>
 
   <script>
-  // ===== CONFIG - edit these if you need to fine-tune positions =====
-  // Template must be named template.png and be placed in same folder as this HTML
-  const TEMPLATE_SRC = 'template.png';
+  // ===== CONFIG =====
+  const TEMPLATE_SRC = 'template.png'; // make sure template.png is in same folder
 
-  // Canvas/template size: 3520 x 1980 px (your provided template)
-  // Frame coords (right-side rounded rectangle) - tuned for your template
   const FRAME = { x: 2450, y: 400, w: 900, h: 1200, r: 50 };
-
-  // Name position (center) on the blue brush area
   const NAME_POS = { x: 2835, y: 1750, maxWidth: 900, maxFont: 140 };
 
-  // =================================================================
+  let currentPhoto, template;
+  let adjust = { scale: 1, offsetX: 0, offsetY: 0 };
 
   const input = document.getElementById('fileInput');
   input.addEventListener('change', handleFile, false);
@@ -67,88 +74,114 @@
   }
 
   function generateInvitation(photoDataUrl, name) {
-    const template = new Image();
+    template = new Image();
     template.src = TEMPLATE_SRC;
+    currentPhoto = new Image();
+    currentPhoto.src = photoDataUrl;
 
     template.onload = () => {
-      // create canvas matching template resolution
-      const canvas = document.createElement('canvas');
-      canvas.width = template.width;
-      canvas.height = template.height;
-      const ctx = canvas.getContext('2d');
-
-      // draw template background
-      ctx.drawImage(template, 0, 0, canvas.width, canvas.height);
-
-      // load photo
-      const photo = new Image();
-      photo.src = photoDataUrl;
-      photo.onload = () => {
-        // === draw photo into frame with cover-cropping (center) ===
-        const f = FRAME;
-        // compute source crop to emulate CSS background-size: cover
-        const targetAR = f.w / f.h;
-        const imgAR = photo.width / photo.height;
-
-        let sx = 0, sy = 0, sw = photo.width, sh = photo.height;
-        if (imgAR > targetAR) {
-          // image wider than frame -> crop left/right
-          sh = photo.height;
-          sw = sh * targetAR;
-          sx = (photo.width - sw) / 2;
-        } else {
-          // image taller -> crop top/bottom
-          sw = photo.width;
-          sh = sw / targetAR;
-          sy = (photo.height - sh) / 2;
-        }
-
-        // clip to rounded rectangle and draw the cropped photo scaled into frame
-        ctx.save();
-        roundRectPath(ctx, f.x, f.y, f.w, f.h, f.r);
-        ctx.clip();
-        ctx.drawImage(photo, sx, sy, sw, sh, f.x, f.y, f.w, f.h);
-        ctx.restore();
-
-        // draw subtle frame stroke (to match template border)
-        ctx.save();
-        ctx.lineWidth = 18;
-        ctx.strokeStyle = 'rgba(196,35,95,0.95)'; // magenta-like outer
-        roundRectPath(ctx, f.x, f.y, f.w, f.h, f.r);
-        ctx.stroke();
-        // thin inner highlight
-        ctx.lineWidth = 6;
-        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-        roundRectPath(ctx, f.x+8, f.y+8, f.w-16, f.h-16, f.r-8);
-        ctx.stroke();
-        ctx.restore();
-
-        // === draw name in blue brush area with auto-fit ===
-        const nameFontFamily = "'Great Vibes', cursive";
-        const fontSize = fitTextToWidth(ctx, name, nameFontFamily, NAME_POS.maxWidth, NAME_POS.maxFont);
-        ctx.save();
-        ctx.font = `${fontSize}px ${nameFontFamily}`;
-        ctx.fillStyle = '#ffffff';
-        // shadow so white text is readable on dark blue brush
-        ctx.shadowColor = 'rgba(0,0,0,0.6)';
-        ctx.shadowBlur = 8;
-        ctx.shadowOffsetY = 4;
-        ctx.textAlign = 'center';
-        // slight vertical tweak so visually centered on brush
-        ctx.fillText(name, NAME_POS.x, NAME_POS.y);
-        ctx.restore();
-
-        // show preview and download button
-        showResult(canvas, name);
+      currentPhoto.onload = () => {
+        adjust = { scale: 1, offsetX: 0, offsetY: 0 };
+        redraw(template, currentPhoto, name);
       };
-
-      photo.onerror = () => alert('Failed to load the uploaded photo. Try a different image.');
     };
-
-    template.onerror = () => alert('Failed to load template.png. Make sure template.png is in same folder as this HTML file.');
   }
 
-  // Measure & reduce font size until text fits max width (returns font size)
+  function redraw(template, photo, name) {
+    const canvas = document.createElement('canvas');
+    canvas.width = template.width;
+    canvas.height = template.height;
+    const ctx = canvas.getContext('2d');
+
+    ctx.drawImage(template, 0, 0, canvas.width, canvas.height);
+
+    const f = FRAME;
+    const targetAR = f.w / f.h;
+    const imgAR = photo.width / photo.height;
+
+    ctx.save();
+    roundRectPath(ctx, f.x, f.y, f.w, f.h, f.r);
+    ctx.clip();
+
+    if (Math.abs(imgAR - targetAR) > 0.6) {
+      // blurred background for wide/tall images
+      ctx.filter = "blur(30px)";
+      ctx.drawImage(photo, f.x, f.y, f.w, f.h);
+      ctx.filter = "none";
+    }
+
+    // Apply zoom and offset
+    const baseW = f.w * adjust.scale;
+    const baseH = baseW / imgAR;
+    const cx = f.x + f.w / 2 + adjust.offsetX;
+    const cy = f.y + f.h / 2 + adjust.offsetY;
+
+    ctx.drawImage(photo, cx - baseW/2, cy - baseH/2, baseW, baseH);
+    ctx.restore();
+
+    // border strokes
+    ctx.lineWidth = 18;
+    ctx.strokeStyle = 'rgba(196,35,95,0.95)';
+    roundRectPath(ctx, f.x, f.y, f.w, f.h, f.r);
+    ctx.stroke();
+
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    roundRectPath(ctx, f.x+8, f.y+8, f.w-16, f.h-16, f.r-8);
+    ctx.stroke();
+
+    // Draw name
+    const fontSize = fitTextToWidth(ctx, name, "'Great Vibes', cursive", NAME_POS.maxWidth, NAME_POS.maxFont);
+    ctx.font = `${fontSize}px 'Great Vibes', cursive`;
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur = 8;
+    ctx.textAlign = 'center';
+    ctx.fillText(name, NAME_POS.x, NAME_POS.y);
+
+    const preview = document.getElementById('preview');
+    preview.innerHTML = '';
+    preview.appendChild(canvas);
+    showAdjustControls(name);
+
+    // Download button
+    const btn = document.createElement('button');
+    btn.className = 'download-btn';
+    btn.innerText = '📥 Download Invitation';
+    btn.onclick = () => {
+      const a = document.createElement('a');
+      a.download = `${name}_Navaratri_Invitation.png`;
+      a.href = canvas.toDataURL('image/png');
+      a.click();
+    };
+    preview.appendChild(btn);
+  }
+
+  function showAdjustControls(name) {
+    const preview = document.getElementById('preview');
+    const controls = document.createElement('div');
+    controls.className = 'controls';
+    controls.innerHTML = `
+      <label>Zoom: <input type="range" id="zoomRange" min="0.5" max="2" step="0.05" value="${adjust.scale}"></label>
+      <label>Move X: <input type="range" id="moveX" min="-400" max="400" step="5" value="${adjust.offsetX}"></label>
+      <label>Move Y: <input type="range" id="moveY" min="-400" max="400" step="5" value="${adjust.offsetY}"></label>
+    `;
+    preview.appendChild(controls);
+
+    document.getElementById('zoomRange').oninput = (e) => {
+      adjust.scale = parseFloat(e.target.value);
+      redraw(template, currentPhoto, name);
+    };
+    document.getElementById('moveX').oninput = (e) => {
+      adjust.offsetX = parseInt(e.target.value);
+      redraw(template, currentPhoto, name);
+    };
+    document.getElementById('moveY').oninput = (e) => {
+      adjust.offsetY = parseInt(e.target.value);
+      redraw(template, currentPhoto, name);
+    };
+  }
+
   function fitTextToWidth(ctx, text, fontFamily, maxWidth, startSize) {
     let size = startSize;
     do {
@@ -161,35 +194,17 @@
   }
 
   function roundRectPath(ctx, x, y, w, h, r) {
-    const radius = Math.max(0, r);
     ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.lineTo(x + w - radius, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
-    ctx.lineTo(x + w, y + h - radius);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
-    ctx.lineTo(x + radius, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
-    ctx.lineTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
     ctx.closePath();
-  }
-
-  function showResult(canvas, name) {
-    const preview = document.getElementById('preview');
-    preview.innerHTML = '';
-    preview.appendChild(canvas);
-
-    const btn = document.createElement('button');
-    btn.className = 'download-btn';
-    btn.innerText = '📥 Download Invitation';
-    btn.onclick = () => {
-      const a = document.createElement('a');
-      a.download = `${name}_Navaratri_Invitation.png`;
-      a.href = canvas.toDataURL('image/png');
-      a.click();
-    };
-    preview.appendChild(btn);
   }
   </script>
 </body>
